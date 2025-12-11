@@ -15,16 +15,12 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
 import { HandledRejectionPromise } from "./handledRejectionPromise";
-
+import type { AsyncBufferedTransformerOptions } from "./asyncBufferedTransformer";
 export type PromiseWrapper<T> = {
   promise: Promise<T>;
 };
 
-export type AsyncBufferedTransformerOptions = {
-  numberOfParallelExecutions: number;
-};
-
-export async function* asyncBufferedTransformer<T>(
+export async function* asyncBufferedUnorderedTransformer<T>(
   stream: Iterable<PromiseWrapper<T>> | AsyncIterable<PromiseWrapper<T>>,
   { numberOfParallelExecutions }: AsyncBufferedTransformerOptions,
   errorLogger: (message: string, ...params: any) => void = console.log
@@ -53,25 +49,25 @@ export async function* asyncBufferedTransformer<T>(
       // that's why bufferSize + 1 = numberOfParallelExecutions
       const existingPromise = buffer[index];
       if (existingPromise) {
-        yield (await existingPromise.promise).value;
+        const result = await Promise.any(buffer.map(p => p?.promise).filter(p => !!p));
+        if (result === undefined) {
+          throw new Error("Unexpected undefined result from Promise.any");
+        }
+        buffer[result.index] = new HandledRejectionPromise(wrapper.promise, result.index);
+        yield result.value;
+      } else {
+        buffer[index] = new HandledRejectionPromise(wrapper.promise, index);
       }
-
-      buffer[index] = new HandledRejectionPromise(wrapper.promise, index);
       index = (index + 1) % bufferSize;
     }
 
-    const limit = index;
-    for (let index = limit; index < bufferSize; index++) {
-      const promise = buffer[index];
-      if (promise) {
-        yield (await promise.promise).value;
+    while (buffer.some(p => !!p?.promise)) {
+      const result = await Promise.any(buffer.map(p => p?.promise).filter(p => !!p));
+      if (result === undefined) {
+        throw new Error("Unexpected undefined result from Promise.any");
       }
-    }
-    for (let index = 0; index < limit; index++) {
-      const promise = buffer[index];
-      if (promise) {
-        yield (await promise.promise).value;
-      }
+      buffer[result.index] = undefined;
+      yield result.value;
     }
   } catch (error) {
     errorLogger("asyncBufferedTransformer: caught error, rethrowing:", error);
@@ -92,24 +88,3 @@ export async function* asyncBufferedTransformer<T>(
   }
 }
 
-export const drainStream = async <T>(
-  streamToDrain: AsyncIterable<T>
-): Promise<void> => {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  for await (const _ of streamToDrain) {
-    //we just drain
-  }
-
-  return;
-};
-
-export const collectAll = async <T>(
-  streamToCollect: AsyncIterable<T>
-): Promise<T[]> => {
-  const results = [];
-  for await (const output of streamToCollect) {
-    results.push(output);
-  }
-
-  return results;
-};
