@@ -53,12 +53,7 @@ export async function* asyncBufferedTransformer<T>(
       // that's why bufferSize + 1 = numberOfParallelExecutions
       const existingPromise = buffer[index];
       if (existingPromise) {
-        const result = await Promise.any(buffer.filter(p => !!p?.promise).map(p => p!.promise));
-        if (!result) {
-          throw new Error(
-            "asyncBufferedTransformer: expected result after Promise.any"
-          );
-        }
+        const result = await Promise.any(buffer.map(p => p?.promise).filter(p => !!p));
         buffer[result.index] = new HandledRejectionPromise(wrapper.promise, result.index);
         yield result.value;
       } else {
@@ -68,7 +63,7 @@ export async function* asyncBufferedTransformer<T>(
     }
 
     while (buffer.some(p => !!p?.promise)) {
-      const result = await Promise.any(buffer.filter(p => !!p?.promise).map(p => p!.promise));
+      const result = await Promise.any(buffer.map(p => p?.promise).filter(p => !!p));
       buffer[result.index] = undefined;
       yield result.value;
     }
