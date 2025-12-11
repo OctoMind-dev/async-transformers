@@ -11,19 +11,21 @@
  */
 export class HandledRejectionPromise<T> {
   private storedPromise: Promise<void>;
+  public readonly index: number;
   private value:
     | undefined
-    | { type: "resolved"; value: T }
-    | { type: "rejected"; reason: unknown };
+    | { type: "resolved"; value: T; index: number }
+    | { type: "rejected"; reason: unknown; index: number };
 
-  constructor(promise: Promise<T>) {
+  constructor(promise: Promise<T>, index: number) {
+    this.index = index;
     this.storedPromise = promise.then(
       (value) => {
-        this.value = { type: "resolved", value };
+        this.value = { type: "resolved", value, index };
         return;
       },
       (reason: unknown) => {
-        this.value = { type: "rejected", reason };
+        this.value = { type: "rejected", reason, index };
       }
     );
   }
@@ -32,7 +34,7 @@ export class HandledRejectionPromise<T> {
    * If you call this, you must also directly await it. Otherwise, you have the
    * same issue again.
    */
-  public get promise(): Promise<T> {
+  public get promise(): Promise<{ value: T; index: number }> {
     return this.storedPromise.then(() => {
       const value = this.value;
       if (!value) {
@@ -44,7 +46,7 @@ export class HandledRejectionPromise<T> {
       // eslint-disable-next-line promise/always-return
       switch (value.type) {
         case "resolved":
-          return value.value;
+          return { value: value.value, index: this.index };
         case "rejected":
           throw value.reason;
       }
