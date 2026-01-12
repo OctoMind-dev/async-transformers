@@ -56,7 +56,7 @@ export async function* asyncBufferedTransformer<T>(
         yield (await existingPromise.promise).value;
       }
 
-      buffer[index] = new HandledRejectionPromise(wrapper.promise, index);
+      buffer[index] = new HandledRejectionPromise(wrapper.promise);
       index = (index + 1) % bufferSize;
     }
 

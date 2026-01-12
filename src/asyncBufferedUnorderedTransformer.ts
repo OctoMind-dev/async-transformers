@@ -39,34 +39,28 @@ export async function* asyncBufferedUnorderedTransformer<T>(
   }
 
   const bufferSize = numberOfParallelExecutions - 1;
-  const buffer: (HandledRejectionPromise<T> | undefined)[] = new Array(
-    bufferSize
-  );
-  let index = 0;
+  const buffer = new Set<HandledRejectionPromise<T>>();
   try {
     for await (const wrapper of stream) {
       // Note: here we already pulled a promise _and_ have a buffer of bufferSize promises
       // that's why bufferSize + 1 = numberOfParallelExecutions
-      const existingPromise = buffer[index];
-      if (existingPromise) {
-        const result = await Promise.any(buffer.map(p => p?.promise).filter(p => !!p));
+      if (buffer.size >= bufferSize) {
+        const result = await Promise.any(Array.from(buffer).map(p => p.promise));
         if (result === undefined) {
           throw new Error("Unexpected undefined result from Promise.any");
         }
-        buffer[result.index] = new HandledRejectionPromise(wrapper.promise, result.index);
+        buffer.delete(result.wrapper);
         yield result.value;
-      } else {
-        buffer[index] = new HandledRejectionPromise(wrapper.promise, index);
       }
-      index = (index + 1) % bufferSize;
+      buffer.add(new HandledRejectionPromise(wrapper.promise));
     }
 
-    while (buffer.some(p => !!p?.promise)) {
-      const result = await Promise.any(buffer.map(p => p?.promise).filter(p => !!p));
+    while (buffer.size > 0) {
+      const result = await Promise.any(Array.from(buffer).map(p => p.promise));
       if (result === undefined) {
         throw new Error("Unexpected undefined result from Promise.any");
       }
-      buffer[result.index] = undefined;
+      buffer.delete(result.wrapper);
       yield result.value;
     }
   } catch (error) {
